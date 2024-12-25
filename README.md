@@ -1,6 +1,8 @@
+<center><img src="./logo.svg" height=100px/></center>
+
 # C*
 
-An extention of C with useful constructs like union return types.
+An extension for C with useful constructs like union return types.
 
 # Installation
 
