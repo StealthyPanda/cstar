@@ -1,5 +1,5 @@
 
-from cstar import *
+from cstar.lib import *
 
 import sys, os
 from loguru import logger
