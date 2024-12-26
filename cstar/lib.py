@@ -569,7 +569,7 @@ def process_unit(code : str) -> str:
     
     structs = (
         '//' + ('-' * 120) + '\n' +
-        '\n'.join(structs) +
+        '\n\n'.join(structs) +
         '\n//' + ('-' * 120) + '\n\n\n\n'
     )
     

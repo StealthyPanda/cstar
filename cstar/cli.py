@@ -26,8 +26,10 @@ def parse_args(args : list[str]) -> tuple[list[str], dict]:
             flag = None
             continue
         
-        if '--' == each[:2]:
-            flag = each[2:]
+        if '-' == each[0]:
+            if '--' == each[:2]: flag = each[2:]
+            else: flag = each[1:]
+            
             if flag:
                 if (i < (len(args) - 1)):
                     flags[flag] = args[i + 1]
@@ -46,17 +48,24 @@ def parse_args(args : list[str]) -> tuple[list[str], dict]:
 def main():
     files, flags = parse_args(sys.argv[1:])
     
-    for i, each in enumerate(files):
-        logger.info(f'Compiling [{i+1}/{len(files)}] `{each}`...')
-        
-        filename, ext, _ = os.path.basename(each).split('.')
-        
-        code = read_file(each)
-        
-        code = process_unit(code)
-        
-        with open(os.path.join(os.getcwd(), f'{filename}.{ext}'), 'w') as file:
-            file.write(code)
+    each = files[0]
+    logger.info(f'Compiling [{each}]...')
+    filename, ext, _ = os.path.basename(each).split('.')
+    
+    output_file_name = os.path.join(os.path.dirname(each), f'{filename}.{ext}')
+    
+    if ('output' in flags):
+        output_file_name = f'{flags['output']}.{ext}'
+    if ('o' in flags):
+        output_file_name = f'{flags['o']}.{ext}'    
+    
+    
+    code = read_file(each)
+    
+    code = process_unit(code)
+    
+    with open(output_file_name, 'w') as file:
+        file.write(code)
         
         
             
