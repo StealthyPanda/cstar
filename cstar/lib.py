@@ -36,8 +36,46 @@ union_function = r'\[' + union_pattern + r"""\]
 
 """
 
-
 identifier = r'[a-zA-Z_]\w*'
+
+maybe_function = r'([a-zA-Z_]\w*)\s*\?' + r"""
+#space after the union
+\s+
+
+(
+    #function name
+    # [a-zA-Z_]+\w*
+    [a-zA-Z_]\w*
+    \s*
+
+
+    #function inputs
+    # \( .*? \)
+    \([^)]*\) 
+)
+
+"""
+
+spicy_function = r'([a-zA-Z_]\w*)\s*!' + r"""
+#space after the union
+\s+
+
+(
+    #function name
+    # [a-zA-Z_]+\w*
+    [a-zA-Z_]\w*
+    \s*
+
+
+    #function inputs
+    # \( .*? \)
+    \([^)]*\) 
+)
+
+"""
+
+
+
 
 return_statement = r"return\[\s*([a-zA-Z_]\w*)\s*\](.*?);"
 
@@ -79,6 +117,8 @@ match_branch = r'([a-zA-Z_]\w*) \s* \{'
 # union_type_pattern = re.compile(r'\( \s* \w+ (\s* \| \s* \w+)* \s* \)', re.VERBOSE)
 union_type_pattern = re.compile(union_pattern, re.VERBOSE | re.DOTALL)
 union_functions_pattern = re.compile(union_function, re.VERBOSE | re.DOTALL)
+maybe_function_pattern = re.compile(maybe_function, re.VERBOSE | re.DOTALL)
+spicy_function_pattern = re.compile(spicy_function, re.VERBOSE | re.DOTALL)
 return_statement_pattern = re.compile(return_statement, re.VERBOSE | re.DOTALL)
 function_inputs_pattern = re.compile(function_inputs, re.VERBOSE | re.DOTALL)
 function_inputs_section_pattern = re.compile(
@@ -134,10 +174,6 @@ class FunctionContext:
 
 return_var_name = '_cmp_return_val'
 
-# functions : dict[str, FunctionContext] = {
-#     'filterEven' : FunctionContext(return_type=('bool', 'int'), var_types={})
-# }
-
 
 
 
@@ -182,7 +218,7 @@ def get_union_struct(context : FunctionContext) -> str:
     structname = '_cmp_' + '_or_'.join(context.return_type)
     fields = [f'\t{t} {t}_val;' for t in context.return_type if t != 'void']
     return structname, (
-        f"typedef struct {structname}" + '{\n'
+        f"typedef struct {structname} " + '{\n'
         f'\tunsigned char _toggle;\n'
         f'{"\n".join(fields)}\n'
         '}' +  f' {structname} ;'
@@ -262,6 +298,7 @@ class FuncProto:
 
 
 functions : dict[FuncProto, FunctionContext] = dict()
+constructed_unions : set[tuple[str, ...]] = set()
 
 
 
@@ -285,6 +322,121 @@ def get_function_proto(code : str) -> FuncProto:
     
     
     
+
+
+def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
+    global functions, constructed_unions
+    
+    newcode = code + ""
+    
+    structs = []
+    
+    
+    ufmat = maybe_function_pattern.search(newcode)
+    while ufmat is not None:
+        
+        print('groups:', ufmat.groups())
+        funcname = ufmat.groups()[-1]
+        
+        ret_type = [ufmat.groups()[0], 'void']
+        ret_type.sort()
+        ret_type = tuple(ret_type)
+        
+        print('Found maybe type:', ret_type)
+        
+        context = FunctionContext(
+            ret_type,
+            dict()
+        )
+        funcproto = get_function_proto(ufmat.group())
+        print('ecnountered function', funcproto)
+        functions[funcproto] = context
+        
+        offset = ufmat.span()[1]
+        bodyleft, bodyright = get_body(newcode[offset:])
+        bodyleft += offset
+        bodyright += offset
+        
+        
+        body = newcode[bodyleft : bodyright]
+        print('uf body:', body)
+        body = replace_returns(body, context)
+        
+        
+        if not ret_type in constructed_unions:
+            structname, structbody = get_union_struct(context)
+            print(structbody)
+            structs.append(structbody)
+            constructed_unions.add(ret_type)
+        
+        
+        newcode = (
+            newcode[:ufmat.span()[0]] + 
+            f'{structname} {funcname} {body}' + 
+            newcode[bodyright:]
+        )
+        
+        ufmat = maybe_function_pattern.search(newcode)
+        
+    return newcode, structs
+
+
+
+def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
+    global functions, constructed_unions
+    
+    newcode = code + ""
+    
+    structs = []
+    
+    
+    ufmat = spicy_function_pattern.search(newcode)
+    while ufmat is not None:
+        
+        print('groups:', ufmat.groups())
+        funcname = ufmat.groups()[-1]
+        
+        ret_type = [ufmat.groups()[0], 'error']
+        ret_type.sort()
+        ret_type = tuple(ret_type)
+        
+        print('Found spicy type:', ret_type)
+        
+        context = FunctionContext(
+            ret_type,
+            dict()
+        )
+        funcproto = get_function_proto(ufmat.group())
+        print('ecnountered function', funcproto)
+        functions[funcproto] = context
+        
+        offset = ufmat.span()[1]
+        bodyleft, bodyright = get_body(newcode[offset:])
+        bodyleft += offset
+        bodyright += offset
+        
+        
+        body = newcode[bodyleft : bodyright]
+        print('uf body:', body)
+        body = replace_returns(body, context)
+        
+        
+        if not ret_type in constructed_unions:
+            structname, structbody = get_union_struct(context)
+            print(structbody)
+            structs.append(structbody)
+            constructed_unions.add(ret_type)
+        
+        
+        newcode = (
+            newcode[:ufmat.span()[0]] + 
+            f'{structname} {funcname} {body}' + 
+            newcode[bodyright:]
+        )
+        
+        ufmat = spicy_function_pattern.search(newcode)
+        
+    return newcode, structs
 
 
 
@@ -374,6 +526,16 @@ def process_matches(code : str) -> str:
 
 
 
+def remove_comments(code : str) -> str:
+    
+    newcode = code
+    left, right = 0, 0
+    while (left < len(code)) and (right < len(code)):
+        pass
+    
+    
+
+
 
 
 preamble = '''
@@ -385,12 +547,25 @@ preamble = '''
 // This file is generated by the C* compiler.
 // Do not change code marked as autogenerated... unless you know what you're doing.
 
+typedef struct error {
+    char *message;
+} error ;
+
+
 '''
 
 
 def process_unit(code : str) -> str:
     
     newcode, structs = process_union_funcs(code)
+    
+    newcode, newstructs = process_maybe_funcs(newcode)
+    structs += newstructs
+    
+    newcode, newstructs = process_spicy_funcs(newcode)
+    structs += newstructs
+    
+    
     
     structs = (
         '//' + ('-' * 120) + '\n' +
@@ -404,5 +579,4 @@ def process_unit(code : str) -> str:
 
 
 
-if __name__ == '__main__':
-    print(get_function_proto('returnIfEven ()'))
+

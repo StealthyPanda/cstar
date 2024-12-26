@@ -49,13 +49,13 @@ def main():
     for i, each in enumerate(files):
         logger.info(f'Compiling [{i+1}/{len(files)}] `{each}`...')
         
-        filename = os.path.basename(each).split('.')[0]
+        filename, ext, _ = os.path.basename(each).split('.')
         
         code = read_file(each)
         
         code = process_unit(code)
         
-        with open(os.path.join(os.getcwd(), f'{filename}.c'), 'w') as file:
+        with open(os.path.join(os.getcwd(), f'{filename}.{ext}'), 'w') as file:
             file.write(code)
         
         
