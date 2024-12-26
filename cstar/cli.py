@@ -72,6 +72,8 @@ def main():
         
         with open(output_file_name, 'w') as file:
             file.write(code)
+    
+    write_structs(os.path.join(output_dir_name, f'cmp_stuff.h'))
         
         
             
