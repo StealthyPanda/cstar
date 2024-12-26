@@ -48,24 +48,30 @@ def parse_args(args : list[str]) -> tuple[list[str], dict]:
 def main():
     files, flags = parse_args(sys.argv[1:])
     
-    each = files[0]
-    logger.info(f'Compiling [{each}]...')
-    filename, ext, _ = os.path.basename(each).split('.')
     
-    output_file_name = os.path.join(os.path.dirname(each), f'{filename}.{ext}')
-    
-    if ('output' in flags):
-        output_file_name = f'{flags['output']}.{ext}'
-    if ('o' in flags):
-        output_file_name = f'{flags['o']}.{ext}'    
-    
-    
-    code = read_file(each)
-    
-    code = process_unit(code)
-    
-    with open(output_file_name, 'w') as file:
-        file.write(code)
+    for i, each in enumerate(files):
+        logger.info(f'Compiling [{i+1}/{len(files)}][{each}]...')
+        
+        filename, ext, _ = os.path.basename(each).split('.')
+        output_dir_name = os.path.dirname(each)
+        
+        if 'odir' in flags:
+            output_dir_name = flags['odir']
+        
+        output_file_name = os.path.join(output_dir_name, f'{filename}.{ext}')
+        
+        if ('output' in flags):
+            output_file_name = f'{flags['output']}.{ext}'
+        if ('o' in flags):
+            output_file_name = f'{flags['o']}.{ext}'
+        
+        
+        code = read_file(each)
+        
+        code = process_unit(code, flags)
+        
+        with open(output_file_name, 'w') as file:
+            file.write(code)
         
         
             
