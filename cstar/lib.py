@@ -1,6 +1,7 @@
 
 from dataclasses import dataclass
 import re
+from .macros import process_macros
 
 union_pattern = r"""
 
@@ -27,6 +28,9 @@ union_function = r'\[' + union_pattern + r"""\]
     # [a-zA-Z_]+\w*
     [a-zA-Z_]\w*
     \s*
+    
+    #optionally if it is a class member function...
+    (::[a-zA-Z_]\w*\s*)?
 
 
     #function inputs
@@ -47,6 +51,9 @@ maybe_function = r'([a-zA-Z_]\w*)\s*\?' + r"""
     # [a-zA-Z_]+\w*
     [a-zA-Z_]\w*
     \s*
+    
+    #optionally if it is a class member function...
+    (::\s*[a-zA-Z_]\w*\s*)?
 
 
     #function inputs
@@ -65,6 +72,9 @@ spicy_function = r'([a-zA-Z_]\w*)\s*!' + r"""
     # [a-zA-Z_]+\w*
     [a-zA-Z_]\w*
     \s*
+    
+    #optionally if it is a class member function...
+    (::[a-zA-Z_]\w*\s*)?
 
 
     #function inputs
@@ -79,23 +89,33 @@ spicy_function = r'([a-zA-Z_]\w*)\s*!' + r"""
 
 return_statement = r"return\[\s*([a-zA-Z_]\w*)\s*\](.*?);"
 
-function_inputs = r"""
+# function_inputs = r"""
 
+# (
+#     ([a-zA-Z_]\w*
+#     \s*
+#     [a-zA-Z_]\w*)?
+
+#     (
+#         \s*,\s*
+#         [a-zA-Z_]\w*
+#         \s*
+#         [a-zA-Z_]\w*
+#     )*
+
+# )
+
+# """
+
+function_inputs = r'''
 (
-    ([a-zA-Z_]\w*
-    \s*
-    [a-zA-Z_]\w*)?
-
-    (
-        \s*,\s*
-        [a-zA-Z_]\w*
-        \s*
-        [a-zA-Z_]\w*
-    )*
-
+    .*?
+    
+    (\s* , .*?)?
 )
 
-"""
+'''
+
 
 function_inputs_section = r'\( \s*' + function_inputs + r'\s* \)'
 
@@ -107,6 +127,7 @@ match_expression = r'''
 
 match_branch = r'([a-zA-Z_]\w*) \s* \{'
 
+anytype = r'[a-zA-Z_]\w*\s*[\*&]*'
 
 
 
@@ -132,6 +153,7 @@ func_proto_pattern = re.compile(
     identifier + r'\s*' +  function_inputs_section, 
     re.VERBOSE | re.DOTALL
 )
+anytype_pattern = re.compile(anytype, re.VERBOSE | re.DOTALL)
 
 
 
@@ -305,19 +327,23 @@ structs : list[str] = []
 
 
 def get_function_proto(code : str) -> FuncProto:
-    
+    print('Trying to find fproto in', code)
     fpmat = func_proto_pattern.search(code)
+    print('found', fpmat)
     
     name = identifier_pattern.search(fpmat.group()).group()
     # print(name)
     inputs = function_inputs_section_pattern.search(fpmat.group())
-    if inputs is not None: inputs = inputs.group()
+    inputs = inputs.group()
+    
     # print(inputs)
     inputs = inputs[1:-1]
     inputs = list(map(lambda x: x.strip(), inputs.split(',')))
-    inputs = list(map(lambda x: x.split(' ')[0], inputs))
     inputs = list(filter(lambda x:x, inputs))
+    inputs = list(map(lambda x: anytype_pattern.search(x).group(), inputs))
+    inputs = list(map(lambda x: re.sub(r'\s+', '', x), inputs))
     # print(inputs)
+    print('inputs are:', inputs)
     
     # return FuncProto(name, tuple(inputs))
     return FuncProto(name, None)
@@ -335,8 +361,8 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
     ufmat = maybe_function_pattern.search(newcode)
     while ufmat is not None:
         
-        print('groups:', ufmat.groups())
-        funcname = ufmat.groups()[-1]
+        print('groups maybe:', ufmat.groups())
+        fullproto = ufmat.groups()[-2]
         
         ret_type = [ufmat.groups()[0], 'void']
         ret_type.sort()
@@ -353,9 +379,20 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
         functions[funcproto] = context
         
         offset = ufmat.span()[1]
-        bodyleft, bodyright = get_body(newcode[offset:])
-        bodyleft += offset
-        bodyright += offset
+        nextpart = newcode[offset:]
+        if nextpart.strip()[0] == '{':
+            bodyleft, bodyright = get_body(nextpart)
+            bodyleft += offset
+            bodyright += offset
+            
+            
+            body = newcode[bodyleft : bodyright]
+            print('uf body:', body)
+            body = replace_returns(body, context)
+            body = ' ' + body
+        else:
+            body = ''
+            bodyright = ufmat.span()[1]
         
         
         body = newcode[bodyleft : bodyright]
@@ -374,7 +411,7 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
         
         newcode = (
             newcode[:ufmat.span()[0]] + 
-            f'{structname} {funcname} {body}' + 
+            f'{structname} {fullproto}{body}' + 
             newcode[bodyright:]
         )
         
@@ -394,7 +431,8 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
     while ufmat is not None:
         
         print('groups:', ufmat.groups())
-        funcname = ufmat.groups()[-1]
+        
+        funcname = ufmat.groups()[-2]
         
         ret_type = [ufmat.groups()[0], 'error']
         ret_type.sort()
@@ -411,14 +449,21 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
         functions[funcproto] = context
         
         offset = ufmat.span()[1]
-        bodyleft, bodyright = get_body(newcode[offset:])
-        bodyleft += offset
-        bodyright += offset
         
-        
-        body = newcode[bodyleft : bodyright]
-        print('uf body:', body)
-        body = replace_returns(body, context)
+        nextpart = newcode[offset:]
+        if nextpart.strip()[0] == '{':
+            bodyleft, bodyright = get_body(nextpart)
+            bodyleft += offset
+            bodyright += offset
+            
+            
+            body = newcode[bodyleft : bodyright]
+            print('uf body:', body)
+            body = replace_returns(body, context)
+            body = ' ' + body
+        else:
+            body = ''
+            bodyright = ufmat.span()[1]
         
         
         if not ret_type in constructed_unions:
@@ -426,11 +471,12 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
             print(structbody)
             structs.append(structbody)
             constructed_unions.add(ret_type)
-        
+        else:
+            structname = '_cmp_' + '_or_'.join(ret_type)
         
         newcode = (
             newcode[:ufmat.span()[0]] + 
-            f'{structname} {funcname} {body}' + 
+            f'{structname} {funcname}{body}' + 
             newcode[bodyright:]
         )
         
@@ -451,7 +497,9 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
     while ufmat is not None:
         
         print('groups:', ufmat.groups())
-        funcname = ufmat.groups()[-1]
+        
+        funcname = ufmat.groups()[-2]
+        
         ret_type = get_union(ufmat.group())
         context = FunctionContext(
             ret_type,
@@ -462,9 +510,20 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
         functions[funcproto] = context
         
         offset = ufmat.span()[1]
-        bodyleft, bodyright = get_body(newcode[offset:])
-        bodyleft += offset
-        bodyright += offset
+        nextpart = newcode[offset:]
+        if nextpart.strip()[0] == '{':
+            bodyleft, bodyright = get_body(nextpart)
+            bodyleft += offset
+            bodyright += offset
+            
+            
+            body = newcode[bodyleft : bodyright]
+            print('uf body:', body)
+            body = replace_returns(body, context)
+            body = ' ' + body
+        else:
+            body = ''
+            bodyright = ufmat.span()[1]
         
         
         body = newcode[bodyleft : bodyright]
@@ -477,11 +536,12 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
             print(structbody)
             structs.append(structbody)
             constructed_unions.add(ret_type)
-        
+        else:
+            structname = '_cmp_' + '_or_'.join(ret_type)
         
         newcode = (
             newcode[:ufmat.span()[0]] + 
-            f'{structname} {funcname} {body}' + 
+            f'{structname} {funcname}{body}' + 
             newcode[bodyright:]
         )
         
@@ -545,7 +605,6 @@ includes = '''
 
 preamble = '''
 
-#include "cmp_stuff.h"
 
 // This file is generated by the C* compiler.
 // Do not change code marked as autogenerated... unless you know what you're doing.
@@ -554,6 +613,7 @@ typedef struct error {
     char *message;
 } error ;
 
+#include "cmp_stuff.h"
 
 '''
 
@@ -561,7 +621,9 @@ typedef struct error {
 def process_unit(code : str, flags : dict[str, str]) -> str:
     global structs
     
-    newcode = process_union_funcs(code)
+    newcode = process_macros(code)
+    
+    newcode = process_union_funcs(newcode)
     
     newcode = process_maybe_funcs(newcode)
     
