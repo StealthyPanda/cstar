@@ -216,8 +216,6 @@ def replace_returns(code : str, context : FunctionContext) -> str:
         if not void:
             value = ret.group(2).strip()
         
-        print(ret, single_type, value)
-        print('context:', context)
         
         structname = "_cmp_" + "_or_".join(context.return_type)
         
@@ -300,7 +298,6 @@ def convert_match_expression(mc : MatchCall) -> str:
 
 def get_match_expression(code : str):
     for each in match_pattern.finditer(code):
-        print(each.groups())
         _, holder, func, params = each.groups()
         mc = MatchCall(
             func, params, holder, functions[func].return_type, 
@@ -327,23 +324,18 @@ structs : list[str] = []
 
 
 def get_function_proto(code : str) -> FuncProto:
-    print('Trying to find fproto in', code)
     fpmat = func_proto_pattern.search(code)
-    print('found', fpmat)
     
     name = identifier_pattern.search(fpmat.group()).group()
-    # print(name)
+
     inputs = function_inputs_section_pattern.search(fpmat.group())
     inputs = inputs.group()
     
-    # print(inputs)
     inputs = inputs[1:-1]
     inputs = list(map(lambda x: x.strip(), inputs.split(',')))
     inputs = list(filter(lambda x:x, inputs))
     inputs = list(map(lambda x: anytype_pattern.search(x).group(), inputs))
     inputs = list(map(lambda x: re.sub(r'\s+', '', x), inputs))
-    # print(inputs)
-    print('inputs are:', inputs)
     
     # return FuncProto(name, tuple(inputs))
     return FuncProto(name, None)
@@ -361,21 +353,18 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
     ufmat = maybe_function_pattern.search(newcode)
     while ufmat is not None:
         
-        print('groups maybe:', ufmat.groups())
         fullproto = ufmat.groups()[-2]
         
         ret_type = [ufmat.groups()[0], 'void']
         ret_type.sort()
         ret_type = tuple(ret_type)
         
-        print('Found maybe type:', ret_type)
         
         context = FunctionContext(
             ret_type,
             dict()
         )
         funcproto = get_function_proto(ufmat.group())
-        print('ecnountered function', funcproto)
         functions[funcproto] = context
         
         offset = ufmat.span()[1]
@@ -387,7 +376,14 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
             
             
             body = newcode[bodyleft : bodyright]
-            print('uf body:', body)
+            
+            #Adding default return[void]
+            end = len(body) - 1
+            while end >= 0 and body[end] != '}': end -= 1
+            body = (
+                body[:end] + '\nreturn[void];\n' + body[end:]
+            )
+            
             body = replace_returns(body, context)
             body = ' ' + body
         else:
@@ -395,14 +391,9 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
             bodyright = ufmat.span()[1]
         
         
-        body = newcode[bodyleft : bodyright]
-        print('uf body:', body)
-        body = replace_returns(body, context)
-        
         
         if ret_type not in constructed_unions:
             structname, structbody = get_union_struct(context)
-            print(structbody)
             structs.append(structbody)
             constructed_unions.add(ret_type)
         else:
@@ -430,7 +421,6 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
     ufmat = spicy_function_pattern.search(newcode)
     while ufmat is not None:
         
-        print('groups:', ufmat.groups())
         
         funcname = ufmat.groups()[-2]
         
@@ -438,14 +428,12 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
         ret_type.sort()
         ret_type = tuple(ret_type)
         
-        print('Found spicy type:', ret_type)
         
         context = FunctionContext(
             ret_type,
             dict()
         )
         funcproto = get_function_proto(ufmat.group())
-        print('ecnountered function', funcproto)
         functions[funcproto] = context
         
         offset = ufmat.span()[1]
@@ -458,7 +446,6 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
             
             
             body = newcode[bodyleft : bodyright]
-            print('uf body:', body)
             body = replace_returns(body, context)
             body = ' ' + body
         else:
@@ -468,7 +455,6 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
         
         if not ret_type in constructed_unions:
             structname, structbody = get_union_struct(context)
-            print(structbody)
             structs.append(structbody)
             constructed_unions.add(ret_type)
         else:
@@ -496,7 +482,6 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
     ufmat = union_functions_pattern.search(newcode)
     while ufmat is not None:
         
-        print('groups:', ufmat.groups())
         
         funcname = ufmat.groups()[-2]
         
@@ -506,7 +491,6 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
             dict()
         )
         funcproto = get_function_proto(ufmat.group())
-        print('ecnountered function', funcproto)
         functions[funcproto] = context
         
         offset = ufmat.span()[1]
@@ -518,7 +502,6 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
             
             
             body = newcode[bodyleft : bodyright]
-            print('uf body:', body)
             body = replace_returns(body, context)
             body = ' ' + body
         else:
@@ -526,14 +509,10 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
             bodyright = ufmat.span()[1]
         
         
-        body = newcode[bodyleft : bodyright]
-        print('uf body:', body)
-        body = replace_returns(body, context)
         
         
         if not ret_type in constructed_unions:
             structname, structbody = get_union_struct(context)
-            print(structbody)
             structs.append(structbody)
             constructed_unions.add(ret_type)
         else:
@@ -557,7 +536,6 @@ def process_matches(code : str) -> str:
     
     mbmat = match_pattern.search(newcode)
     while mbmat is not None:
-        print('match groups:', mbmat.groups())
         _, holder, func, params = mbmat.groups()
         
         offset = mbmat.span()[1]
@@ -605,15 +583,11 @@ includes = '''
 
 preamble = '''
 
-
 // This file is generated by the C* compiler.
 // Do not change code marked as autogenerated... unless you know what you're doing.
 
-typedef struct error {
-    char *message;
-} error ;
+#include "_cmp_stuff.h"
 
-#include "cmp_stuff.h"
 
 '''
 
@@ -632,7 +606,7 @@ def process_unit(code : str, flags : dict[str, str]) -> str:
     
     newcode = process_matches(newcode)
     
-    keep_includes = True
+    keep_includes = False
     if 'libs' in flags:
         keep_includes = flags['libs'] in ['True', 'true', '']
     if 'strict' in flags:
@@ -642,11 +616,21 @@ def process_unit(code : str, flags : dict[str, str]) -> str:
     return f'{includes if keep_includes else ''}\n{preamble}\n{newcode}'
 
 
+
+errorstruct = '''
+
+typedef struct error {
+    char *message;
+} error ;
+
+'''
 def write_structs(path : str):
-    global structs
+    global structs, errorstruct
+    
     structscode = (
         '\n#pragma once\n\n' + 
         '//' + ('-' * 120) + '\n' +
+        errorstruct +
         '\n\n'.join(structs) +
         '\n//' + ('-' * 120) + '\n\n\n\n'
     )

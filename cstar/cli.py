@@ -49,6 +49,25 @@ def main():
     files, flags = parse_args(sys.argv[1:])
     
     
+    if 'idir' in flags:
+        folder = flags['idir']
+        files = list(filter(
+            lambda x: os.path.isfile(x) and (os.path.basename(x).split('.')[-1] == 'cmp'),
+            list(map(
+                lambda y: os.path.join(folder, y),
+                os.listdir(folder)
+            ))
+        ))
+    
+    logger.warning('Compiling files:')
+    for i, each in enumerate(files):
+        if i == (len(files) - 1):
+            logger.info(f'╰{each}')
+            continue
+        logger.info(f'├{each}')
+        
+    print()
+    
     for i, each in enumerate(files):
         logger.info(f'Compiling [{i+1}/{len(files)}][{each}]...')
         
@@ -73,7 +92,7 @@ def main():
         with open(output_file_name, 'w') as file:
             file.write(code)
     
-    write_structs(os.path.join(output_dir_name, f'cmp_stuff.h'))
+    write_structs(os.path.join(output_dir_name, f'_cmp_stuff.h'))
         
         
             
