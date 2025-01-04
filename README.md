@@ -2,7 +2,7 @@
 
 # C*
 
-An extension for C with useful constructs like union return types.
+An extension for C with useful constructs like union return types and errors.
 
 # Installation
 
@@ -15,11 +15,11 @@ pip install git+https://github.com/StealthyPanda/cstar
 
 # Usage
 
-Use the CLI `cstar` to parse any `.cmp` file to C code.
+Use the CLI `cstar` to parse any `.cmp` file to C/C++ code.
 
 Example:
 
-`example.cmp`
+`example.c.cmp`
 ```c
 [int | void] returnIfEven(int x) {
     // return the number if even, else return false.
@@ -46,6 +46,6 @@ int main() {
 }
 ```
 
-Running `cstar example.cmp` outputs `example.c`, which can be run or used with the rest of your C codebase.
+Running `cstar example.c.cmp` outputs `example.c`, which can be run or used with the rest of your C codebase.
 
 

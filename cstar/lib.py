@@ -1,7 +1,8 @@
 
-from dataclasses import dataclass
+from .classes import *
 import re
 from .macros import process_macros
+from .funcs import *
 
 valid_ret_type = r'[a-zA-Z_]\w*(<.*?>)? \* *'
 
@@ -144,7 +145,7 @@ function_inputs_section = r'\( \s*' + function_inputs + r'\s* \)'
 
 match_expression = r"""
 
-\[ \s* ([a-zA-Z_]\w*)\s* =  \s* (\S*) \] \s*
+\[ \s* ([a-zA-Z_]\w*)\s* =  \s* (.*?) \] \s*
 
 """
 
@@ -188,48 +189,6 @@ valid_ret_type_pattern = re.compile(valid_ret_type, re.VERBOSE | re.DOTALL)
 
 
 
-def get_round_body(code : str) -> tuple[int, int] | None:
-    braces = 1
-    try : i = code.index('(')
-    except ValueError: return None
-    start = i
-    
-    i += 1
-    while i < len(code):
-        if code[i] == '(': braces += 1
-        if code[i] == ')': braces -= 1
-            
-        i += 1
-        
-        if braces <= 0: break
-    
-    if braces > 0:
-        raise ValueError(f'Unbalanced round brackets; `{code}`')
-    
-    return start, i
-
-
-def get_angle_body(code : str) -> tuple[int, int] | None:
-    braces = 1
-    try : i = code.index('<')
-    except ValueError: return None
-    start = i
-    
-    i += 1
-    while i < len(code):
-        if code[i] == '<': braces += 1
-        if code[i] == '>': braces -= 1
-            
-        i += 1
-        
-        if braces <= 0: break
-    
-    if braces > 0:
-        raise ValueError(f'Unbalanced angle brackets; `{code}`')
-    
-    return start, i
-
-
 
 def get_union(code : str) -> tuple[str, ...]:
     m = union_type_pattern.search(code)
@@ -239,31 +198,10 @@ def get_union(code : str) -> tuple[str, ...]:
     union.sort()
     return tuple(union)
 
-def get_body(code : str) -> tuple[int, int]:
-    braces = 1
-    i = code.index('{')
-    start = i
-    
-    i += 1
-    while i < len(code):
-        if code[i] == '{': braces += 1
-        if code[i] == '}': braces -= 1
-            
-        i += 1
-        
-        if braces <= 0: break
-    
-    return start, i
 
 
 
 
-@dataclass
-class FunctionContext:
-    return_type : tuple[str, ...]
-    var_types : dict[str, str]
-    template : tuple[str, ...] | None
-    templ_args : str
 
 return_var_name = '_cmp_return_val'
 
@@ -294,24 +232,6 @@ def get_template_part(types : tuple[str, ...], decl : bool) -> str:
     if decl : types = tuple(map(lambda x:f'typename {x}', types))
     return f"<{', '.join(types)}>"
 
-
-        
-def split_root_commas(typestr : str) -> tuple[str]:
-    splits = []
-    depth = 0
-    last = 0
-    for i, each in enumerate(typestr):
-        if each == '<': depth += 1
-        elif each == '>': depth -= 1
-        elif each == ',':
-            if depth == 0:
-                splits.append(typestr[last : i])
-                last = i + 1
-    
-    if depth == 0:
-        splits.append(typestr[last : ])
-    
-    return splits
 
 
 def get_writable_name(typestr : str, depth : int = 0) -> str:
@@ -359,6 +279,8 @@ def get_struct_writable_name(types : tuple[str, ...]) -> str:
     )
 
 def requires_template_args(typestr : str, template : tuple[str, ...]) -> bool:
+    
+    if template is None: return False
     
     base = identifier_pattern.search(typestr)
     if base is None: raise ValueError(f'Weird type name: {typestr}')
@@ -444,20 +366,11 @@ def get_union_struct(context : FunctionContext) -> str:
     )
 
 
-@dataclass
-class MatchCall:
-    funcname : str
-    params : str
-    holder : None | str
-    union_type : tuple[str, ...]
-    body : str
-    rhs : str
-    tp : str
 
-temp_holders = 0
+
+
 
 def convert_match_expression(mc : MatchCall) -> str:
-    global temp_holders
     
     # structname = '_cmp_' + '_or_'.join(mc.union_type)
     structname = get_struct_writable_name(mc.union_type)
@@ -470,7 +383,12 @@ def convert_match_expression(mc : MatchCall) -> str:
     
     branches = []
     
+    print('match body:', mc.body)
+    
     for branch in match_branch_pattern.finditer(mc.body):
+        
+        print('branch groups:', branch.groups())
+        
         left, right = branch.span()
         
         branch_type = branch.group(1).strip()
@@ -495,35 +413,25 @@ def convert_match_expression(mc : MatchCall) -> str:
     
     return (
         '{\n' + 
-        f'{structname}{tp} {holdername} = {mc.rhs});\n' +
+        f'{structname}{tp} {holdername} = {mc.rhs};\n' +
         '\nelse '.join(branches) + '\n}' 
     )
     
     
 
-def get_match_expression(code : str):
+def get_match_expression(code : str, compileinfo : CompileInfo):
     for each in match_pattern.finditer(code):
         _, holder, func, params = each.groups()
         mc = MatchCall(
-            func, params, holder, functions[func].return_type, 
+            func, params, holder, compileinfo.functions[func].return_type, 
             get_body(code[each.span()[1]:])
         )
         
         return convert_match_expression(mc)
 
 
-@dataclass
-class FuncProto:
-    name : str
-    input_types : tuple[str, ...]
-    
-    def __hash__(self):
-        return self.name.__hash__()
 
 
-functions : dict[FuncProto, FunctionContext] = dict()
-constructed_unions : set[tuple[str, ...]] = set()
-structs : list[str] = []
 
 
 
@@ -552,8 +460,7 @@ def get_function_proto(code : str) -> FuncProto:
 
 
 
-def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
-    global functions, constructed_unions, structs
+def process_maybe_funcs(code : str, compileinfo : CompileInfo) -> tuple[str, list[str]]:
     
     newcode = code + ""
     
@@ -589,7 +496,7 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
         )
         
         funcproto = get_function_proto(ufmat.group())
-        functions[funcproto] = context
+        compileinfo.functions[funcproto] = context
         
         offset = ufmat.span()[1]
         nextpart = newcode[offset:]
@@ -616,13 +523,14 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
         
         
         
-        if ret_type not in constructed_unions:
+        if ret_type not in compileinfo.constructed_unions:
             structname, structbody = get_union_struct(context)
-            structs.append(structbody)
-            constructed_unions.add(ret_type)
+            compileinfo.structs.append(structbody)
+            compileinfo.constructed_unions.add(ret_type)
         else:
             # structname = '_cmp_' + '_or_'.join(ret_type)
             structname = get_struct_writable_name(ret_type)
+            structbody = ''
         
         # tp = ''
         # if template_ori is not None:
@@ -631,6 +539,7 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
         newcode = (
             newcode[:ufmat.span()[0]] + 
             '\n\n' + 
+            f'{structbody}\n' +
             (f'{template_ori}\n' if template_ori is not None else '') + 
             f'{structname}{tp} {fullproto}{body}' + 
             newcode[bodyright:]
@@ -642,8 +551,7 @@ def process_maybe_funcs(code : str) -> tuple[str, list[str]]:
 
 
 
-def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
-    global functions, constructed_unions, structs
+def process_spicy_funcs(code : str, compileinfo : CompileInfo) -> tuple[str, list[str]]:
     
     newcode = code + ""
     
@@ -677,7 +585,7 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
         )
         
         funcproto = get_function_proto(ufmat.group())
-        functions[funcproto] = context
+        compileinfo.functions[funcproto] = context
         
         offset = ufmat.span()[1]
         
@@ -696,13 +604,14 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
             bodyright = ufmat.span()[1]
         
         
-        if not ret_type in constructed_unions:
+        if not ret_type in compileinfo.constructed_unions:
             structname, structbody = get_union_struct(context)
-            structs.append(structbody)
-            constructed_unions.add(ret_type)
+            compileinfo.structs.append(structbody)
+            compileinfo.constructed_unions.add(ret_type)
         else:
             # structname = '_cmp_' + '_or_'.join(ret_type)
             structname = get_struct_writable_name(ret_type)
+            structbody = ''
         
         # tp = ''
         # if template_ori is not None:
@@ -711,6 +620,7 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
         newcode = (
             newcode[:ufmat.span()[0]] + 
             '\n\n' + 
+            f'{structbody}\n' +
             (f'{template_ori}\n' if template_ori is not None else '') + 
             f'{structname}{tp} {fullproto}{body}' + 
             newcode[bodyright:]
@@ -723,8 +633,7 @@ def process_spicy_funcs(code : str) -> tuple[str, list[str]]:
 
 
 
-def process_union_funcs(code : str) -> tuple[str, list[str]]:
-    global functions, constructed_unions, structs
+def process_union_funcs(code : str, compileinfo : CompileInfo) -> tuple[str, list[str]]:
     
     newcode = code + ""
     
@@ -758,7 +667,7 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
         )
         
         funcproto = get_function_proto(ufmat.group())
-        functions[funcproto] = context
+        compileinfo.functions[funcproto] = context
         
         offset = ufmat.span()[1]
         nextpart = newcode[offset:]
@@ -778,13 +687,14 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
         
         
         
-        if not ret_type in constructed_unions:
+        if not ret_type in compileinfo.constructed_unions:
             structname, structbody = get_union_struct(context)
-            structs.append(structbody)
-            constructed_unions.add(ret_type)
+            compileinfo.structs.append(structbody)
+            compileinfo.constructed_unions.add(ret_type)
         else:
             # structname = '_cmp_' + '_or_'.join(ret_type)
             structname = get_struct_writable_name(ret_type)
+            structbody = ''
         
         # tp = ''
         # if template_ori is not None:
@@ -793,6 +703,7 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
         newcode = (
             newcode[:ufmat.span()[0]] + 
             '\n\n' + 
+            f'{structbody}\n' +
             (f'{template_ori}\n' if template_ori is not None else '') + 
             f'{structname}{tp} {fullproto}{body}' + 
             newcode[bodyright:]
@@ -803,7 +714,7 @@ def process_union_funcs(code : str) -> tuple[str, list[str]]:
     return newcode
 
 
-def process_matches(code : str) -> str:
+def process_matches(code : str, compileinfo : CompileInfo) -> str:
     global functions
     
     newcode = code + ""
@@ -820,8 +731,10 @@ def process_matches(code : str) -> str:
         
         funcname = [x for x in funcfull.split('::') if x]
         for i, each in enumerate(funcname):
-            l, r = get_angle_body(each)
-            funcname[i] = each[:l]
+            bounds = get_angle_body(each)
+            if bounds:
+                l, r = bounds
+                funcname[i] = each[:l]
         funcname = '::'.join(funcname)
         
         offset = mbmat.span()[1]
@@ -830,7 +743,7 @@ def process_matches(code : str) -> str:
         bodyright += offset
         
         funcproto = FuncProto(funcname, None)
-        context = functions[funcproto]
+        context = compileinfo.functions[funcproto]
         
         mc = MatchCall(
             funcname, params, holder, context.return_type, 
@@ -873,27 +786,26 @@ preamble = '''
 // This file is generated by the C* compiler.
 // Do not change code marked as autogenerated... unless you know what you're doing.
 
-#include "_cmp_stuff.h"
+#include "{fp}_cmp_stuff.h"
 
 
 '''
 
 
-def process_unit(code : str, flags : dict[str, str]) -> str:
-    global structs, functions
+def process_unit(code : str, flags : dict[str, str], compileinfo : CompileInfo, folderpart : str) -> str:
     
-    newcode = process_macros(code)
+    newcode = process_macros(code, compileinfo)
     
-    newcode = process_union_funcs(newcode)
+    newcode = process_union_funcs(newcode, compileinfo)
     
-    newcode = process_maybe_funcs(newcode)
+    newcode = process_maybe_funcs(newcode, compileinfo)
     
-    newcode = process_spicy_funcs(newcode)
+    newcode = process_spicy_funcs(newcode, compileinfo)
     
     print('functions at the end of all processing of onions:')
-    print(functions)
+    print(compileinfo.functions)
     
-    newcode = process_matches(newcode)
+    newcode = process_matches(newcode, compileinfo)
     
     keep_includes = False
     if 'libs' in flags:
@@ -901,30 +813,33 @@ def process_unit(code : str, flags : dict[str, str]) -> str:
     if 'strict' in flags:
         keep_includes = False
     
+    fp = folderpart
     # return f'{includes if keep_includes else ''}\n{preamble}\n{structscode}\n{newcode}'
-    return f'{includes if keep_includes else ''}\n{preamble}\n{newcode}'
+    return f'{includes if keep_includes else ''}\n{preamble.format(fp=fp)}\n{newcode}'
 
 
 
 errorstruct = '''
+
+#pragma once
 
 typedef struct error {
     char *message;
 } error ;
 
 '''
-def write_structs(path : str):
-    global structs, errorstruct
+def write_structs(path : str, compileinfo : CompileInfo):
+    global errorstruct
     
-    structscode = (
-        '\n#pragma once\n\n' + 
-        '//' + ('-' * 120) + '\n' +
-        errorstruct +
-        '\n\n'.join(structs) +
-        '\n//' + ('-' * 120) + '\n\n\n\n'
-    )
+    # structscode = (
+    #     '\n#pragma once\n\n' + 
+    #     '//' + ('-' * 120) + '\n' +
+    #     errorstruct +
+    #     '\n\n'.join(compileinfo.structs) +
+    #     '\n//' + ('-' * 120) + '\n\n\n\n'
+    # )
     with open(path, 'w') as file:
-        file.write(structscode)
+        file.write(errorstruct)
 
 
 
