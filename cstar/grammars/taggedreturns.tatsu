@@ -1,0 +1,35 @@
+
+@@grammar::TaggedReturns
+@@nameguard :: False
+@@parseinfo :: True
+
+
+
+# The Entry Point
+start = { sea | @+:island }* ;
+
+# The "Sea" (Junk to ignore)
+# It uses a negative lookahead to ensure we don't consume an actual island
+sea = !island /./ ;
+
+# The "Island" (The stuff you actually want)
+island = tagged_return ;
+
+
+tagged_return =
+    'return[' return_type:return_type ']' value:/[^;]*/ ';'
+    ;
+
+
+
+
+# This is just capturing all normal valid C return 
+# Basically a sequence of space separated identifiers, then optionally sequence of *
+return_type = 
+    base_type:{ identifier }+ pointer:{'*'}*
+    ;
+
+
+identifier =
+    /[a-zA-Z_][a-zA-Z0-9_]*/
+    ;

@@ -1,3 +1,6 @@
 *.pyc
 __pycache__/
 poetry.lock
+*.cmp
+*.c
+*.h

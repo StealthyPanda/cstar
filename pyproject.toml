@@ -1,20 +1,23 @@
-[tool.poetry]
+[project]
 name = "cstar"
-version = "0.1.0"
-description = "C with additional useful constructs."
-authors = ["StealthyPanda <shaikm259@gmail.com>"]
+version = "0.2.0"
+description = "C with additional useful constructs"
+authors = [
+    {name = "StealthyPanda",email = "shaikm259@gmail.com"}
+]
 readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "tatsu (==5.15.1)",
+    "typer (>=0.24.1,<0.25.0)"
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-colorama = "^0.4.6"
-loguru = "^0.7.3"
-
+[tool.poetry]
+include = ["cstar/grammars/*.tatsu"]
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
-
 [tool.poetry.scripts]
-cstar = "cstar.cli:main"
+cstar = "cstar.cli:app"

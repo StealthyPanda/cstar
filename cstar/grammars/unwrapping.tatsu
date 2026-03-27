@@ -1,0 +1,51 @@
+
+@@grammar::Unwrapping
+@@parseinfo :: True
+
+
+
+# The Entry Point
+start = { sea | @+:island }* ;
+
+# The "Sea" (Junk to ignore)
+# It uses a negative lookahead to ensure we don't consume an actual island
+sea = !island /./ ;
+
+# The "Island" (The stuff you actually want)
+island = unwrapping ;
+
+
+unwrapping = 
+    decl:unwrapping_decl '{' branches:{ unwrapping_branch }* '}'
+    ;
+
+unwrapping_decl =
+    '[' [{symbol:identifier '='}] func_name:identifier '(' args:(/[^)]*/) ')' ']'
+    ;
+
+unwrapping_branch =
+    return_type:return_type body:function_body
+    ;
+
+
+# The main function rule
+function_body = body:('{' balanced_content '}') ;
+
+# This rule matches either another nested {} pair 
+# OR any character that isn't a brace
+# balanced_content = { '{' balanced_content '}' | /[^{}]*/ }* ;
+# balanced_content = { '{' balanced_content '}' | /(?s)[^{}]+/ }* ;
+balanced_content = { '{' balanced_content '}' | /[^{}]+/ }* ;
+
+
+# This is just capturing all normal valid C return 
+# Basically a sequence of space separated identifiers, then optionally sequence of *
+return_type = 
+    base_type:{ identifier }+ pointer:{'*'}*
+    ;
+
+
+
+identifier =
+    /[a-zA-Z_][a-zA-Z0-9_]*/
+    ;

@@ -1,0 +1,68 @@
+
+@@grammar::Onions
+@@parseinfo :: True
+
+
+# The Entry Point
+start = { sea | @+:island }* ;
+
+# The "Sea" (Junk to ignore)
+# It uses a negative lookahead to ensure we don't consume an actual island
+sea = !island /./ ;
+
+# The "Island" (The stuff you actually want)
+island = onion_function | maybe_or_spicy_function ;
+
+
+
+
+# A maybe or spicy function
+maybe_or_spicy_function =
+    maybe_or_spicy:maybe_or_spicy_return_type func_name:identifier '(' /[^)]*/ ')' body:function_body
+    ;    
+
+
+# Maybe return type
+maybe_or_spicy_return_type =
+    return:return_type type:/[!?]{1,2}/ 
+    ;
+
+
+# Final full onion function:
+onion_function = 
+    onion_return:onion_return func_name:identifier '(' /[^)]*/ ')' body:function_body
+    ;
+
+
+
+
+# This is just capturing all normal valid C return 
+# Basically a sequence of space separated identifiers, then optionally sequence of *
+return_type = 
+    base_type:{ identifier }+ pointer:{'*'}*
+    ;
+
+# This matches the full onion multiple return type
+onion_return =
+    '[' return:onion_return_inner ']'
+    ;
+# This is just the inner part, separated into another thing to get flat list in capture.
+onion_return_inner =
+    @+:return_type { '|' @+:return_type }*
+    ;
+
+
+identifier =
+    /[a-zA-Z_][a-zA-Z0-9_]*/
+    ;
+
+
+# The main function rule
+function_body = lb:'{' body:balanced_content rb:'}' ;
+
+# This rule matches either another nested {} pair 
+# OR any character that isn't a brace
+# balanced_content = { '{' balanced_content '}' | /[^{}]*/ }* ;
+# balanced_content = { '{' balanced_content '}' | /(?s)[^{}]+/ }* ;
+balanced_content = { '{' balanced_content '}' | /[^{}]+/ }* ;
+

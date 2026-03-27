@@ -1,0 +1,161 @@
+
+import tatsu, os
+
+from .utils import *
+from .semantics import *
+from .renderer import *
+
+
+from importlib import resources
+
+grammar_pkg = resources.files('cstar.grammars')
+
+onion_grammar = grammar_pkg.joinpath('onions.tatsu').read_text()
+tr_grammar    = grammar_pkg.joinpath('taggedreturns.tatsu').read_text()
+uw_grammar    = grammar_pkg.joinpath('unwrapping.tatsu').read_text()
+
+
+
+
+def create_compiler_context() -> CompilerContext:
+    return CompilerContext(
+        onion_funcs=dict(),
+        onion_func_names=set(),
+        onion_returns_dict=dict(),
+        onion_ord_returns_dict=dict(),
+        onion_bodies_dict=dict(),
+    )
+
+
+def preamble_path(root : str) -> str:
+    return os.path.join(root, "preamble.h")
+def cstarlib_path(root : str) -> str:
+    return os.path.join(root, "cstarlib.h")
+
+
+def compile_files(
+        file_paths : list[str], 
+        out_paths : list[str], 
+        root_dir : str
+    ) -> CompilerContext:    
+    
+    context = create_compiler_context()
+    
+    tr_parser = tatsu.compile(tr_grammar, semantics=TaggedReturnSemantics())
+    
+    onsem = OnionSemantics(context, tr_parser)
+    on_parser = tatsu.compile(onion_grammar, semantics=onsem)
+    
+    # # This loop is for filling context    
+    # for each_file in file_paths:
+    #     with open(each_file, 'r') as file:
+    #         code = file.read()
+    #     onion_ast = on_parser.parse(code)
+    #     onion_ast : list[OnionFunc] = list(filter(lambda x: type(x) == OnionFunc, onion_ast))
+        
+    #     for onion in onion_ast:
+    #         if onion.returns not in onsem.ctx.onion_returns_dict:
+    #             buffer = list(onion.returns)
+    #             buffer.sort(key=lambda x: get_c_alias(x))
+    #             onsem.ctx.onion_ord_returns_dict[onion.returns] = buffer
+                
+    #             name, body = get_c_onion(onion.returns, onsem.ctx)
+    #             onsem.ctx.onion_returns_dict[onion.returns] = (name, body)
+    
+    # This is actual parsing
+    for each_file, out_file in zip(file_paths, out_paths):
+        with open(each_file, 'r') as file:
+            code = file.read()
+        onion_ast = on_parser.parse(code)
+        onion_ast : list[OnionFunc] = list(filter(lambda x: type(x) == OnionFunc, onion_ast))
+        
+        for onion in onion_ast:
+            if onion.returns not in onsem.ctx.onion_returns_dict:
+                buffer = list(onion.returns)
+                buffer.sort(key=lambda x: get_c_alias(x))
+                onsem.ctx.onion_ord_returns_dict[onion.returns] = buffer
+                
+                name, body = get_c_onion(onion.returns, onsem.ctx)
+                onsem.ctx.onion_returns_dict[onion.returns] = (name, body)
+            
+            ob = code[onion.body_bounds[0] : onion.body_bounds[1]]
+            tr_ast = tr_parser.parse(ob)
+            tr_ast : list[TaggedReturn] = list(filter(lambda x: type(x) == TaggedReturn, tr_ast))
+            onsem.ctx.onion_bodies_dict[onion] = render_tagged_returns(
+                ob, tr_ast, onsem.ctx, onion)
+        
+        code = render_onions(code, onion_ast, onsem.ctx)
+    
+        uw_parser = tatsu.compile(uw_grammar, semantics=UnwrapSemantics(onsem.ctx))
+        uw_ast : list[Unwrap] = uw_parser.parse(code)
+        uw_ast = list(filter(lambda x: type(x) == Unwrap, uw_ast))
+        
+        code = render_unwraps(code, uw_ast, onsem.ctx)
+        
+        ppath = os.path.join(root_dir, "preamble.h")
+        ppath = os.path.relpath(ppath, os.path.dirname(out_file))
+        if '\\' in ppath:
+            ppath = '/'.join(ppath.split('\\'))
+        
+        code = f'\n#include "{ppath}"\n' + code
+        
+        with open(out_file, 'w') as file:
+            file.write(code)
+    
+    return onsem.ctx
+
+
+cstarlib = '''
+
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
+
+
+typedef struct error {
+
+    char *message;
+
+} error;
+
+
+'''
+
+
+
+def compile_project(
+        srcpaths : list[str], 
+        outpaths : list[str],
+        root_dir : str
+    ):
+    
+    srcpaths = list(filter(lambda x: x.split('.')[-1].lower() == 'cmp', srcpaths))
+    if not srcpaths: return
+    
+    context = compile_files(srcpaths, outpaths, root_dir)
+    with open(preamble_path(root_dir), 'w') as file:
+        file.write(get_preamble(context))
+    
+    with open(cstarlib_path(root_dir), 'w') as file:
+        file.write(cstarlib)
+    
+    
+    
+    
+    
+
+
+
+if __name__ == '__main__':
+    compile_files(['fulltest.c.cmp'], ['fulltest.c'])
