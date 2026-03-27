@@ -226,7 +226,7 @@ def get_unwrap(unwrap : Unwrap, code : str, context : CompilerContext) -> str:
     
     branches = ' else '.join(branches)
     
-    render = declaration_render + ' ' + branches
+    render = '{ ' + declaration_render + ' ' + branches + ' }'
     
     return render
     
