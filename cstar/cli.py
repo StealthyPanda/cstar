@@ -128,9 +128,9 @@ def main():
             )
         
         if ('output' in flags):
-            output_file_name = f'{flags['output']}.{ext}'
+            output_file_name = f"{flags['output']}.{ext}"
         if ('o' in flags):
-            output_file_name = f'{flags['o']}.{ext}'
+            output_file_name = f"{flags['o']}.{ext}"
         
         
         output_file_base_ext = os.path.basename(output_file_name)
@@ -158,6 +158,8 @@ def main():
         fp = f'./{fp}/'
         
         code = process_unit(code, flags, compinf, fp)
+        if ext in ['h', 'hpp']:
+            code = '\n\n#pragma once\n\n' + code
         
         with open(output_file_name, 'w') as file:
             file.write(code)

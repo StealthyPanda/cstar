@@ -7,11 +7,13 @@ import os
 
 
 identifier = r'[a-zA-Z_]\w*'
+reifitnedi = r'\w*[a-zA-Z_]'
 
 macro_regex = r'@(' + identifier + r'[?!]?)'
 
 macro_pattern = re.compile(macro_regex, re.VERBOSE | re.DOTALL)
-
+onlyid_pattern = re.compile(identifier, re.VERBOSE | re.DOTALL)
+backwards_identifier_pattern = re.compile(reifitnedi, re.VERBOSE | re.DOTALL)
 
 
 def throw_macro(inputs : list[str], **kwargs) -> str:
@@ -22,7 +24,7 @@ def throw_macro(inputs : list[str], **kwargs) -> str:
     return (
         'error e = { ' + message + ' }; '
         'return[error] e;'
-    )
+    ), kwargs['span']
 
 
 
@@ -39,15 +41,15 @@ def unwrap_macro_by_type(inputs : list[str], **kwargs) -> str:
 
     unwrap_call_temp = f'[ _unwrap_holder = {call} ]'
     unwrap_err_temp = (
-        'error { fprintf(stderr, "UNHANDLED ERROR ' +
-        f'<{file} @ line {line}>' + ':\\n%s\\n", _unwrap_holder.message); exit(-1); }'
+        'error { fprintf(stderr, "ERROR::UNHANDLED_ERROR ' +
+        f'<{file} @ line {line}>' + ':\\n\\t->%s\\n", _unwrap_holder.message); exit(-1); }'
     )
     unwrap_ok = type_to_look + '{' + f' {output} = _unwrap_holder; ' + '}'
 
     
     return (
         unwrap_call_temp + '{\n' + unwrap_err_temp + '\n' + unwrap_ok + '\n' + '}'
-    )
+    ), kwargs['span']
 
 
 def unwrap_error_macro(inputs : list[str], **kwargs) -> str:
@@ -68,8 +70,8 @@ def unwrap_error_macro(inputs : list[str], **kwargs) -> str:
     
     unwrap_call_temp = f'[ _unwrap_holder = {call} ]'
     unwrap_err_temp = (
-        'error { fprintf(stderr, "UNHANDLED ERROR ' +
-        f'<{file} @ line {line}>' + ':\\n%s\\n", _unwrap_holder.message); exit(-1); }'
+        'error { fprintf(stderr, "ERROR::UNHANDLED_ERROR ' +
+        f'<{file} @ line {line}>' + ':\\n\\t->%s\\n", _unwrap_holder.message); exit(-1); }'
     )
     unwrap_ok = type_to_look + '{' + f' {output} = _unwrap_holder; ' + '}'
 
@@ -77,7 +79,7 @@ def unwrap_error_macro(inputs : list[str], **kwargs) -> str:
     return (
         lhstatement + 
         unwrap_call_temp + '{\n' + unwrap_err_temp + '\n' + unwrap_ok + '\n' + '}'
-    )
+    ), kwargs['span']
 
 
 def unwrap_maybe_macro(inputs : list[str], **kwargs) -> str:
@@ -98,8 +100,8 @@ def unwrap_maybe_macro(inputs : list[str], **kwargs) -> str:
     
     unwrap_call_temp = f'[ _unwrap_holder = {call} ]'
     unwrap_err_temp = (
-        'void { fprintf(stderr, "Warning::VOID_RETURN ' +
-        f'<{file} @ line {line}>' + f': \\nVariable <{output}> may be uninitialized.\\n"); ' + '}'
+        'void { fprintf(stderr, "WARNING::VOID_RETURN ' +
+        f'<{file} @ line {line}>' + f': \\n\\t->Variable <{output}> may be uninitialized.\\n"); ' + '}'
     )
     unwrap_ok = type_to_look + '{' + f' {output} = _unwrap_holder; ' + '}'
 
@@ -107,7 +109,7 @@ def unwrap_maybe_macro(inputs : list[str], **kwargs) -> str:
     return (
         lhstatement + 
         unwrap_call_temp + '{\n' + unwrap_err_temp + '\n' + unwrap_ok + '\n' + '}'
-    )
+    ), kwargs['span']
 
 
 
@@ -136,10 +138,108 @@ def define_macro(inputs : list[str], **kwargs) -> str:
     macros[name] = macrofunc
     
     
-    return ''
+    return '', kwargs['span']
+
+
+def mini_unwrap_error_macro(inputs : list[str], **kwargs) -> str:
+    # call, type_to_look, output = inputs
     
+    codeinfo : CodeInfo = kwargs['codeinfo']
+    line = codeinfo.line_number
+    file = codeinfo.file_name
+    file = os.path.basename(file)
+    
+    call = inputs[0]
+    funcname = re.search(onlyid_pattern, inputs[0]).group()
+    print('uw func name:', funcname)
+    
+    
+    code : str = kwargs['allcode']
+    l, r = kwargs['bounds']
+    subcode = code[:l][::-1]
+    b2 = subcode.index('=')
+    mainvar = backwards_identifier_pattern.search(subcode[b2 + 1:])
+    lb3, rb3 = mainvar.span()
+    mainvar = mainvar.group()[::-1]
+    
+    
+    type_to_look = backwards_identifier_pattern.search(subcode[b2 + 1 + rb3:])
+    _, leftmost = type_to_look.span()
+    type_to_look = type_to_look.group()[::-1]
+    
+    leftmost = len(subcode) - (leftmost + b2 + 1 + rb3)
+    
+    
+    print('mainvar:', mainvar, 'type_to_look:', type_to_look)
+    output = mainvar
+
+    unwrap_call_temp = f'[ _unwrap_holder = {call} ]'
+    unwrap_err_temp = (
+        'error { fprintf(stderr, "ERROR::UNHANDLED_ERROR ' +
+        f'<{file} @ line {line}>' + ':\\n\\t->%s\\n", _unwrap_holder.message); exit(-1); }'
+    )
+    unwrap_ok = type_to_look + ' {' + f' {output} = _unwrap_holder; ' + '}'
+
+    ls, rs = kwargs['span']
+    
+    initstatement = f'{type_to_look} {output};\n'
+    
+    return (
+        initstatement +
+        unwrap_call_temp + '{\n' + unwrap_err_temp + '\n' + unwrap_ok + '\n' + '}'
+    ), (leftmost, rs)
+
+
+
+def mini_unwrap_maybe_macro(inputs : list[str], **kwargs) -> str:
+    
+    codeinfo : CodeInfo = kwargs['codeinfo']
+    line = codeinfo.line_number
+    file = codeinfo.file_name
+    file = os.path.basename(file)
+    
+    call = inputs[0]
+    funcname = re.search(onlyid_pattern, inputs[0]).group()
+    print('uw func name:', funcname)
+    
+    
+    code : str = kwargs['allcode']
+    l, r = kwargs['bounds']
+    subcode = code[:l][::-1]
+    b2 = subcode.index('=')
+    mainvar = backwards_identifier_pattern.search(subcode[b2 + 1:])
+    lb3, rb3 = mainvar.span()
+    mainvar = mainvar.group()[::-1]
+    
+    type_to_look = backwards_identifier_pattern.search(subcode[b2 + 1 + rb3:])
+    _, leftmost = type_to_look.span()
+    type_to_look = type_to_look.group()[::-1]
+    
+    leftmost = len(subcode) - (leftmost + b2 + 1 + rb3)
+    
+    print('mainvar:', mainvar, 'type_to_look:', type_to_look)
+    output = mainvar
+    
+    unwrap_call_temp = f'[ _unwrap_holder = {call} ]'
+    unwrap_err_temp = (
+        'void { fprintf(stderr, "WARNING::VOID_RETURN ' +
+        f'<{file} @ line {line}>' + f': \\n\\t->Variable <{output}> may be uninitialized.\\n"); ' + '}'
+    )
+    unwrap_ok = type_to_look + '{' + f' {output} = _unwrap_holder; ' + '}'
+
+    ls, rs = kwargs['span']
+    
+    initstatement = f'{type_to_look} {output};\n'
+    
+    return (
+        initstatement + 
+        unwrap_call_temp + '{\n' + unwrap_err_temp + '\n' + unwrap_ok + '\n' + '}'
+    ), (leftmost, rs)
+
 
 macros['define'] = define_macro
+macros['uw?'] = mini_unwrap_maybe_macro
+macros['uw!'] = mini_unwrap_error_macro
 
 
 
@@ -181,14 +281,27 @@ def process_macros(code : str, compileinfo : CompileInfo) -> str:
             code.index(newcode[ mmat.span()[0] : right + offset ]),
         )
         
-        macout = mac(inputs, codeinfo=codeinfo, code=newcode[mmat.span()[0]:], body=body)
+        spanleft, spanright = mmat.span()[0], right + offset + r
+        
+        macout, (spanleft, spanright) = mac(
+            inputs, 
+            codeinfo=codeinfo, 
+            code=newcode[mmat.span()[0]:], 
+            allcode=newcode,
+            originalcode=code, 
+            body=body, 
+            compileinfo=compileinfo,
+            bounds=mmat.span(),
+            span=(spanleft, spanright),
+        )
+        
         print('macout', macout)
         if macout is None or not macout:
             macout = ''
         
         newcode = (
-            newcode[:mmat.span()[0]] + 
-            macout + newcode[right + offset + r:]
+            newcode[:spanleft] + 
+            macout + newcode[spanright:]
         )
         
         mmat = macro_pattern.search(newcode)

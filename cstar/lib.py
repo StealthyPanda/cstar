@@ -354,14 +354,15 @@ def get_union_struct(context : FunctionContext) -> str:
         requires_template_args(t, context.template)
         for t in context.return_type
     ])
+    fields = '\n'.join(fields)
     return structname, (
         (
-            f'template {get_template_part(context.template, True)}\n' 
+            f'template {get_template_part(context.template, True)}' + '\n' 
             if rs else ''
         ) +
-        f"{'typedef ' if not rs else ''}struct {structname} " + '{\n'
-        f'\tunsigned char _toggle;\n'
-        f'{"\n".join(fields)}\n'
+        f"{'typedef ' if not rs else ''}struct {structname} " + '{' + '\n'
+        f'\tunsigned char _toggle;' + '\n'
+        f'{fields}' + '\n'
         '}' +  (f' {structname} ' if not rs else "") + ';'
     )
 
@@ -511,9 +512,9 @@ def process_maybe_funcs(code : str, compileinfo : CompileInfo) -> tuple[str, lis
             #Adding default return[void]
             end = len(body) - 1
             while end >= 0 and body[end] != '}': end -= 1
-            body = (
-                body[:end] + '\nreturn[void];\n' + body[end:]
-            )
+            # body = (
+            #     body[:end] + '\nreturn[void];\n' + body[end:]
+            # )
             
             body = replace_returns(body, context)
             body = ' ' + body
@@ -559,6 +560,7 @@ def process_spicy_funcs(code : str, compileinfo : CompileInfo) -> tuple[str, lis
     ufmat = spicy_function_pattern.search(newcode)
     while ufmat is not None:
         
+        print(f"\nDetected spicy boi:", ufmat.groups())
         
         fullproto = ufmat.groups()[-4]
         
@@ -815,14 +817,17 @@ def process_unit(code : str, flags : dict[str, str], compileinfo : CompileInfo, 
     
     fp = folderpart
     # return f'{includes if keep_includes else ''}\n{preamble}\n{structscode}\n{newcode}'
-    return f'{includes if keep_includes else ''}\n{preamble.format(fp=fp)}\n{newcode}'
+    return (
+        f"{includes if keep_includes else ''}" + "\n" +
+        f"{preamble.format(fp=fp)}" + "\n" + newcode
+    )
 
 
 
 errorstruct = '''
 
 #pragma once
-
+#include <stdlib.h>
 typedef struct error {
     char *message;
 } error ;
