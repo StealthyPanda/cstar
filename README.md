@@ -1,5 +1,3 @@
-<center><img src="./logo.svg" height=100px/></center>
-
 # C*
 
 An extension for C with useful constructs like union return types and errors.
@@ -22,7 +20,7 @@ Example:
 `example.c.cmp`
 ```c
 [int | void] returnIfEven(int x) {
-    // return the number if even, else return false.
+    // return the number if even, else return nothing.
     if (x % 2) {
         return[void];
     } else {
