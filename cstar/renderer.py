@@ -192,6 +192,7 @@ def replace_c_var(source_code : str, target_var : str, replacement_var : str) ->
 
 
 def get_branch_body(branch : UnwrapBranch, code : str, symbol : str, ord : list[C_return]) -> str:    
+    if not symbol: return code[branch.body_bounds[0] : branch.body_bounds[1]]
     return replace_c_var(
         code[branch.body_bounds[0] : branch.body_bounds[1]], symbol,
         f'(_unwrap_buffer_.val_{ord.index(branch.rtype)})' 
