@@ -46,6 +46,6 @@ int main() {
 }
 ```
 
-Running `cstar example.c.cmp` outputs `example.c`, which can be run or used with the rest of your C codebase.
+Running `cstar file example.c.cmp` outputs `example.c`, which can be run or used with the rest of your C codebase.
 
 
