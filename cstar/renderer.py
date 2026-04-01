@@ -58,7 +58,12 @@ def get_preamble(context : CompilerContext) -> str:
     
         preamble += '\n' + comment + body + '\n'
     
-    preamble = '\n#pragma once\n#include "cstarlib.h"\n\n' + preamble
+    preamble = (
+        '\n#pragma once\n#include "cstarlib.h"\n\n' + 
+        '\n'.join([f'#include <{x}.h>' 
+                   for x in list(context.external_headers)]) +
+        preamble
+    )
     
     return preamble
 

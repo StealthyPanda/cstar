@@ -29,6 +29,7 @@ def file(src : str, out : Annotated[str, typer.Argument(help='Output path')] = '
     
     transpiler.compile_project([src], [out], dir)
     
+    
 
 def get_all_cmps(folder : str) -> list[str]:
     files = []

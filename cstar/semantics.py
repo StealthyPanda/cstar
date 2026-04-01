@@ -33,34 +33,57 @@ class OnionSemantics(BaseSemantics):
         
         buffer = ast['onion_return']
         
+        body = None
+        bb = None
+        decl = None
+        if 'body' in ast:
+            body = ''.join(flatten(ast['body']['body']))
+            bb = (
+                ast['body'].parseinfo.pos,
+                ast['body'].parseinfo.endpos,
+            )
+            decl = False
+        elif 'nobody' in ast:
+            body = ';'
+            bb = (
+                ast['nobody'].parseinfo.pos,
+                ast['nobody'].parseinfo.endpos,
+            )
+            decl = True
+        
         onf = OnionFunc(
             name=ast['func_name'], 
             returns=frozenset(buffer['return']),
-            body=''.join(flatten(ast['body']['body'])),
+            body=body,
             bounds=(ast.parseinfo.pos, ast.parseinfo.endpos),
             onion_bounds=(
                 buffer.parseinfo.pos, 
                 buffer.parseinfo.endpos,
             ),
-            body_bounds=(
-                ast['body'].parseinfo.pos,
-                ast['body'].parseinfo.endpos,
+            body_bounds=bb,
+            lines=(
+                ast.parseinfo.line,
+                ast.parseinfo.endline,
             ),
+            filename=ast.parseinfo.tokenizer.filename,
+            declaration=decl
         )
         
         trs = self.tr_parser.parse(onf.body)
-        trs = list(filter(lambda x: type(x) == TaggedReturn, trs))
+        trs : list[TaggedReturn] = list(filter(lambda x: type(x) == TaggedReturn, trs))
         for tr in trs:
             if tr.rtype not in onf.returns:
-                raise TypeError(
-                    f"Invalid return type `{str(tr.rtype)}` in `{onf.name}`"
+                report_error (
+                    tr.filename, tr.line,
+                    f"Invalid return type `{str(tr.rtype)}` in `{onf.name}`"   
                 )
         
-        
         if onf.name in self.ctx.onion_func_names:
-            raise SyntaxError(
-                f"Redefinition of function `{onf.name}`"
-            )
+            if not self.ctx.onion_funcs[onf.name].declaration:
+                report_error(
+                    onf.filename, onf.lines[0], 
+                    f"Redefinition of function `{onf.name}`"
+                )
         
         self.ctx.onion_func_names.add(onf.name)
         self.ctx.onion_funcs[onf.name] = onf
@@ -74,34 +97,59 @@ class OnionSemantics(BaseSemantics):
         if '?' in info['type']: rets.append(c_void_type)
         if '!' in info['type']: rets.append(c_error_type)
         
+        body = None
+        bb = None
+        decl = None
+        if 'body' in ast:
+            body = ''.join(flatten(ast['body']['body']))
+            bb = (
+                ast['body'].parseinfo.pos,
+                ast['body'].parseinfo.endpos,
+            )
+            decl = False
+        elif 'nobody' in ast:
+            body = ';'
+            bb = (
+                ast['nobody'].parseinfo.pos,
+                ast['nobody'].parseinfo.endpos,
+            )
+            decl = True
+            
         
         
         onf = OnionFunc(
             name=ast['func_name'], 
             returns=frozenset(rets),
-            body=''.join(flatten(ast['body']['body'])),
+            body=body,
             bounds=(ast.parseinfo.pos, ast.parseinfo.endpos),
             onion_bounds=(
                 ast['maybe_or_spicy'].parseinfo.pos, 
                 ast['maybe_or_spicy'].parseinfo.endpos,
             ),
-            body_bounds=(
-                ast['body'].parseinfo.pos,
-                ast['body'].parseinfo.endpos,
+            body_bounds=bb,
+            lines=(
+                ast.parseinfo.line,
+                ast.parseinfo.endline,
             ),
+            filename=ast.parseinfo.tokenizer.filename,
+            declaration=decl
         )
         
         trs = self.tr_parser.parse(onf.body)
+        trs : list[TaggedReturn] = list(filter(lambda x: type(x) == TaggedReturn, trs))
         for tr in trs:
             if tr.rtype not in onf.returns:
-                raise TypeError(
-                    f"Invalid return type `{str(tr.rtype)}` in `{onf.name}`"
+                report_error (
+                    tr.filename, tr.line,
+                    f"Invalid return type `{str(tr.rtype)}` in `{onf.name}`"   
                 )
         
         if onf.name in self.ctx.onion_func_names:
-            raise SyntaxError(
-                f"Redefinition of function `{onf.name}`"
-            )
+            if not self.ctx.onion_funcs[onf.name].declaration:
+                report_error(
+                    onf.filename, onf.lines[0], 
+                    f"Redefinition of function `{onf.name}`"
+                )
         
         self.ctx.onion_func_names.add(onf.name)
         self.ctx.onion_funcs[onf.name] = onf
@@ -110,7 +158,14 @@ class OnionSemantics(BaseSemantics):
     
         
     
-
+class HeaderSemantics(BaseSemantics):
+    def __init__(self):
+        super().__init__(None)
+    
+    def external_header(self, ast):
+        return ExternalHeader(
+            name=ast['name']
+        )
 
 
 class TaggedReturnSemantics(BaseSemantics):
@@ -122,7 +177,9 @@ class TaggedReturnSemantics(BaseSemantics):
         return TaggedReturn(
             rtype=ast['return_type'],
             value=ast['value'],
-            bounds=(ast.parseinfo.pos, ast.parseinfo.endpos)
+            bounds=(ast.parseinfo.pos, ast.parseinfo.endpos),
+            line=ast.parseinfo.line,
+            filename=ast.parseinfo.tokenizer.filename
         )
 
 

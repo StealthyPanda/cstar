@@ -14,12 +14,14 @@ sea = !island /./ ;
 island = onion_function | maybe_or_spicy_function ;
 
 
-
+func_terminator =
+    semi:';' # Tatsu BS
+    ;
 
 # A maybe or spicy function
 maybe_or_spicy_function =
-    maybe_or_spicy:maybe_or_spicy_return_type func_name:identifier '(' /[^)]*/ ')' body:function_body
-    ;    
+    maybe_or_spicy:maybe_or_spicy_return_type func_name:identifier '(' /[^)]*/ ')' ((body:function_body) | (nobody:func_terminator))
+    ;
 
 
 # Maybe return type
@@ -30,7 +32,7 @@ maybe_or_spicy_return_type =
 
 # Final full onion function:
 onion_function = 
-    onion_return:onion_return func_name:identifier '(' /[^)]*/ ')' body:function_body
+    onion_return:onion_return func_name:identifier '(' /[^)]*/ ')' ((body:function_body) | (nobody:func_terminator))
     ;
 
 
